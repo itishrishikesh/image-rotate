@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+const { useEffect, useRef, useState } = React;
 
 export default function MatrixRotatorVisualizer() {
   // Helpers
@@ -446,3 +446,5 @@ export default function MatrixRotatorVisualizer() {
     </div>
   );
 }
+
+window.MatrixRotatorVisualizer = MatrixRotatorVisualizer;
