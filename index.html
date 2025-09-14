@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Matrix Rotator Visualizer</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Your component -->
+  <script type="text/babel" src="./matrix_rotator_visualizer_react.jsx"></script>
+
+  <!-- Render it -->
+  <script type="text/babel">
+    import MatrixRotatorVisualizer from "./matrix_rotator_visualizer_react.jsx";
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<MatrixRotatorVisualizer />);
+  </script>
+</body>
+</html>
