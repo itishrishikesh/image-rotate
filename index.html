@@ -14,130 +14,149 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useRef, useEffect } = React;
+    const { useState, useEffect, useRef } = React;
 
-    function App() {
-      // Helpers
-      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    // Helpers
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const deepCopy = (mat) => mat.map(r => r.slice());
 
-      function generateSequentialMatrix(n) {
-        const arr = [];
-        let c = 1;
-        for (let i = 0; i < n; i++) {
-          const row = [];
-          for (let j = 0; j < n; j++) row.push(c++);
-          arr.push(row);
-        }
-        return arr;
+    function generateSequentialMatrix(n) {
+      const arr = [];
+      let c = 1;
+      for (let i = 0; i < n; i++) {
+        const row = [];
+        for (let j = 0; j < n; j++) row.push(c++);
+        arr.push(row);
       }
+      return arr;
+    }
 
-      function shuffleArray(arr) {
-        const a = arr.slice();
-        for (let i = a.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [a[i], a[j]] = [a[j], a[i]];
-        }
-        return a;
+    // --- First algorithm actions: reverse + transpose ---
+    function generateActionsReverseTranspose(n) {
+      const acts = [];
+      for (let i = 0; i < Math.floor(n / 2); i++) {
+        acts.push({ type: "swapRows", i1: i, i2: n - 1 - i, desc: `Reverse: swap row ${i} with row ${n - 1 - i}` });
       }
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          acts.push({ type: "swapCells", a: [i, j], b: [j, i], desc: `Transpose: swap cell (${i},${j}) with (${j},${i})` });
+        }
+      }
+      return acts;
+    }
 
-      function generateActionsReverseTranspose(n) {
-        const acts = [];
-        for (let i = 0; i < Math.floor(n / 2); i++) {
+    function applyActionReverseTranspose(mat, action) {
+      const m = deepCopy(mat);
+      if (!action) return m;
+      if (action.type === "swapRows") {
+        const tmp = m[action.i1];
+        m[action.i1] = m[action.i2];
+        m[action.i2] = tmp;
+      } else if (action.type === "swapCells") {
+        const [i1, j1] = action.a;
+        const [i2, j2] = action.b;
+        const t = m[i1][j1];
+        m[i1][j1] = m[i2][j2];
+        m[i2][j2] = t;
+      }
+      return m;
+    }
+
+    // --- Second algorithm actions: pointer-based ---
+    function generateActionsPointer(n) {
+      const acts = [];
+      let l = 0, r = n - 1;
+      while (l < r) {
+        for (let i = 0; i < r - l; i++) {
+          const top = l, bottom = r;
+
+          // Save topLeft
           acts.push({
-            type: "swapRows",
-            i1: i,
-            i2: n - 1 - i,
-            desc: `Reverse: swap row ${i} with row ${n - 1 - i}`,
+            type: "save",
+            cell: [top, l + i],
+            desc: `Save top-left (${top},${l + i})`
+          });
+
+          // bottom-left -> top-left
+          acts.push({
+            type: "move",
+            from: [bottom - i, l],
+            to: [top, l + i],
+            desc: `Move bottom-left (${bottom - i},${l}) → top-left (${top},${l + i})`
+          });
+
+          // bottom-right -> bottom-left
+          acts.push({
+            type: "move",
+            from: [bottom, r - i],
+            to: [bottom - i, l],
+            desc: `Move bottom-right (${bottom},${r - i}) → bottom-left (${bottom - i},${l})`
+          });
+
+          // top-right -> bottom-right
+          acts.push({
+            type: "move",
+            from: [top + i, r],
+            to: [bottom, r - i],
+            desc: `Move top-right (${top + i},${r}) → bottom-right (${bottom},${r - i})`
+          });
+
+          // saved top-left -> top-right
+          acts.push({
+            type: "restore",
+            to: [top + i, r],
+            fromSaved: [top, l + i],
+            desc: `Move saved top-left → top-right (${top + i},${r})`
           });
         }
-        for (let i = 0; i < n; i++) {
-          for (let j = i + 1; j < n; j++) {
-            acts.push({
-              type: "swapCells",
-              a: [i, j],
-              b: [j, i],
-              desc: `Transpose: swap cell (${i},${j}) with (${j},${i})`,
-            });
-          }
-        }
-        return acts;
+        r--;
+        l++;
       }
+      return acts;
+    }
 
-      function generateActionsPointer(n) {
-        const acts = [];
-        for (let layer = 0; layer < Math.floor(n / 2); layer++) {
-          const first = layer;
-          const last = n - 1 - layer;
-          for (let i = first; i < last; i++) {
-            const offset = i - first;
-            acts.push({
-              type: "swapCycle",
-              positions: [
-                [first, i],                   // top
-                [i, last],                    // right
-                [last, last - offset],        // bottom
-                [last - offset, first],       // left
-              ],
-              desc: `Cycle swap layer ${layer}, offset ${offset}`,
-            });
-          }
-        }
-        return acts;
+    function applyActionPointer(mat, action, saved) {
+      const m = deepCopy(mat);
+      let newSaved = saved;
+      if (!action) return { matrix: m, saved: newSaved };
+      if (action.type === "save") {
+        newSaved = m[action.cell[0]][action.cell[1]];
+      } else if (action.type === "move") {
+        const val = m[action.from[0]][action.from[1]];
+        m[action.to[0]][action.to[1]] = val;
+      } else if (action.type === "restore") {
+        m[action.to[0]][action.to[1]] = newSaved;
+        newSaved = null;
       }
+      return { matrix: m, saved: newSaved };
+    }
 
-      function deepCopy(mat) {
-        return mat.map((r) => r.slice());
-      }
-
-      function applyActionToMatrix(mat, action) {
-        const m = deepCopy(mat);
-        if (!action) return m;
-        if (action.type === "swapRows") {
-          const tmp = m[action.i1];
-          m[action.i1] = m[action.i2];
-          m[action.i2] = tmp;
-        } else if (action.type === "swapCells") {
-          const [i1, j1] = action.a;
-          const [i2, j2] = action.b;
-          const t = m[i1][j1];
-          m[i1][j1] = m[i2][j2];
-          m[i2][j2] = t;
-        } else if (action.type === "swapCycle") {
-          const [p1, p2, p3, p4] = action.positions;
-          const tmp = m[p1[0]][p1[1]];
-          m[p1[0]][p1[1]] = m[p4[0]][p4[1]];
-          m[p4[0]][p4[1]] = m[p3[0]][p3[1]];
-          m[p3[0]][p3[1]] = m[p2[0]][p2[1]];
-          m[p2[0]][p2[1]] = tmp;
-        }
-        return m;
-      }
-
-      // State
+    // --- Generic Visualizer Component ---
+    function Visualizer({ title, algoType }) {
       const [n, setN] = useState(3);
       const [initialMatrix, setInitialMatrix] = useState(() => generateSequentialMatrix(3));
       const [matrix, setMatrix] = useState(() => deepCopy(initialMatrix));
-      const [algorithm, setAlgorithm] = useState("reverseTranspose");
-      const [actions, setActions] = useState(() => generateActionsReverseTranspose(3));
+      const [actions, setActions] = useState(() =>
+        algoType === "reverseTranspose" ? generateActionsReverseTranspose(3) : generateActionsPointer(3)
+      );
       const [index, setIndex] = useState(-1);
       const [playing, setPlaying] = useState(false);
       const [speed, setSpeed] = useState(600);
+      const [saved, setSaved] = useState(null);
       const timerRef = useRef(null);
-      const [inputText, setInputText] = useState("");
 
+      // Update actions when size changes
       useEffect(() => {
-        setActions(
-          algorithm === "reverseTranspose"
-            ? generateActionsReverseTranspose(n)
-            : generateActionsPointer(n)
-        );
-      }, [n, algorithm]);
+        setActions(algoType === "reverseTranspose" ? generateActionsReverseTranspose(n) : generateActionsPointer(n));
+        setInitialMatrix(generateSequentialMatrix(n));
+      }, [n]);
 
       useEffect(() => {
         setMatrix(deepCopy(initialMatrix));
         setIndex(-1);
+        setSaved(null);
         setPlaying(false);
-      }, [initialMatrix, algorithm]);
+      }, [initialMatrix]);
 
       useEffect(() => {
         if (!playing) {
@@ -157,210 +176,70 @@
       function stepForward() {
         if (index + 1 >= actions.length) return;
         const next = actions[index + 1];
-        setMatrix((prev) => applyActionToMatrix(prev, next));
-        setIndex((i) => i + 1);
+        if (algoType === "reverseTranspose") {
+          setMatrix(prev => applyActionReverseTranspose(prev, next));
+        } else {
+          const result = applyActionPointer(matrix, next, saved);
+          setMatrix(result.matrix);
+          setSaved(result.saved);
+        }
+        setIndex(i => i + 1);
       }
 
       function stepBack() {
-        if (index < 0) return;
-        const act = actions[index];
-        setMatrix((prev) => applyActionToMatrix(prev, act));
-        setIndex((i) => i - 1);
-      }
-
-      function handlePlayPause() {
-        if (playing) setPlaying(false);
-        else {
-          if (index >= actions.length - 1) {
-            setMatrix(deepCopy(initialMatrix));
-            setIndex(-1);
-          }
-          setPlaying(true);
-        }
+        alert("Step back not implemented for this algorithm.");
       }
 
       function handleReset() {
         setPlaying(false);
         setMatrix(deepCopy(initialMatrix));
         setIndex(-1);
+        setSaved(null);
       }
 
-      function handleRandomize() {
-        const flat = generateSequentialMatrix(n).flat();
-        const shuffled = shuffleArray(flat);
-        const mat = [];
-        for (let i = 0; i < n; i++) mat.push(shuffled.slice(i * n, i * n + n));
-        setInitialMatrix(mat);
-      }
-
-      function handleGenerateSequential() {
-        const mat = generateSequentialMatrix(n);
-        setInitialMatrix(mat);
-      }
-
-      function handleApplyCustom() {
-        const rows = inputText
-          .trim()
-          .split(/\n+/)
-          .map((r) => r.trim())
-          .filter(Boolean)
-          .map((r) => r.split(/[,\s]+/).map((x) => Number(x)));
-        if (rows.length === 0) return;
-        const rowsCount = rows.length;
-        if (!rows.every((r) => r.length === rowsCount)) {
-          alert("Matrix must be square.");
-          return;
-        }
-        setN(rowsCount);
-        setInitialMatrix(rows);
-      }
-
-      function handleSizeChange(newN) {
-        const nn = clamp(Number(newN) || 2, 2, 10);
-        setN(nn);
-        setInitialMatrix(generateSequentialMatrix(nn));
-      }
-
-      const currentAction = index >= 0 ? actions[index] : null;
-      function isCellHighlighted(i, j) {
-        if (!currentAction) return false;
-        if (currentAction.type === "swapRows") return i === currentAction.i1 || i === currentAction.i2;
-        if (currentAction.type === "swapCells") {
-          const [a1, b1] = currentAction.a;
-          const [a2, b2] = currentAction.b;
-          return (i === a1 && j === b1) || (i === a2 && j === b2);
-        }
-        if (currentAction.type === "swapCycle") {
-          return currentAction.positions.some(([x, y]) => x === i && y === j);
-        }
-        return false;
-      }
-
-      // UI Render
       return (
-        <div className="p-6 max-w-6xl mx-auto space-y-6 font-sans">
-          <header className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold">Matrix Rotator Visualizer</h1>
-            <div className="text-sm text-gray-600">
-              Algorithm: {algorithm === "reverseTranspose" ? "Reverse + Transpose" : "Pointer 4-way Swap"}
-            </div>
-          </header>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Controls */}
-            <div className="lg:col-span-1 space-y-4">
-              <div className="bg-white p-4 rounded-lg shadow">
-                <div className="flex items-center gap-2 mb-2">
-                  <label className="text-sm">Size (n × n):</label>
-                  <input
-                    type="number"
-                    min={2}
-                    max={10}
-                    value={n}
-                    onChange={(e) => handleSizeChange(e.target.value)}
-                    className="w-20 p-1 border rounded text-sm"
-                  />
-                  <button className="ml-2 px-2 py-1 border rounded text-sm" onClick={handleGenerateSequential}>
-                    Sequential
-                  </button>
-                  <button className="ml-2 px-2 py-1 border rounded text-sm" onClick={handleRandomize}>
-                    Randomize
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2 mb-2">
-                  <label className="text-sm">Algorithm:</label>
-                  <select
-                    value={algorithm}
-                    onChange={(e) => setAlgorithm(e.target.value)}
-                    className="border rounded p-1 text-sm"
-                  >
-                    <option value="reverseTranspose">Reverse + Transpose</option>
-                    <option value="pointer">Pointer (4-way swap)</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button className="px-3 py-1 border rounded"
-                    onClick={() => { stepBack(); setPlaying(false); }}
-                    disabled={index < 0}>
-                    ◀ Step
-                  </button>
-                  <button className="px-3 py-1 border rounded" onClick={() => handlePlayPause()}>
-                    {playing ? "⏸ Pause" : "▶ Play"}
-                  </button>
-                  <button className="px-3 py-1 border rounded"
-                    onClick={() => { stepForward(); setPlaying(false); }}
-                    disabled={index >= actions.length - 1}>
-                    Step ▶
-                  </button>
-                  <button className="px-3 py-1 border rounded ml-2" onClick={handleReset}>
-                    Reset
-                  </button>
-                </div>
-
-                <div className="mt-3 text-sm">
-                  <label>Speed (ms):</label>
-                  <input type="range" min={50} max={2000} value={speed}
-                    onChange={(e) => setSpeed(Number(e.target.value))}
-                    className="w-full" />
-                  <div className="text-xs text-gray-600">{speed} ms per step</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Matrix */}
-            <div className="lg:col-span-1 flex flex-col items-center">
-              <div className="bg-white p-4 rounded-lg shadow w-full">
-                <h3 className="font-semibold mb-3">Matrix</h3>
-                <div className="mx-auto"
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: `repeat(${n}, minmax(44px, 64px))`,
-                    gap: 6,
-                  }}>
-                  {matrix.map((row, i) =>
-                    row.map((val, j) => {
-                      const highlighted = isCellHighlighted(i, j);
-                      return (
-                        <div key={`${i}-${j}`}
-                          className={`flex items-center justify-center border rounded text-sm font-semibold h-12 w-12 select-none ${highlighted ? "bg-yellow-100 border-yellow-400" : "bg-white"}`}>
-                          {val}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-                <div className="mt-4 text-sm text-gray-700">
-                  <div>Step: {Math.max(0, index + 1)} / {actions.length}</div>
-                  <div className="mt-1 font-medium text-gray-800">{currentAction ? currentAction.desc : "(not started)"}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Timeline */}
-            <div className="lg:col-span-1 space-y-4">
-              <div className="bg-white p-4 rounded-lg shadow">
-                <h3 className="font-semibold">Timeline</h3>
-                <div className="mt-3 max-h-64 overflow-auto text-sm font-mono">
-                  {actions.map((a, idx) => (
-                    <div key={idx}
-                      className={`p-2 rounded mb-1 cursor-pointer ${idx === index ? "bg-blue-50 border-l-4 border-blue-400" : "bg-white"}`}
-                      onClick={() => {
-                        setPlaying(false);
-                        let m = deepCopy(initialMatrix);
-                        for (let k = 0; k <= idx; k++) m = applyActionToMatrix(m, actions[k]);
-                        setMatrix(m);
-                        setIndex(idx);
-                      }}>
-                      <div className="text-xs text-gray-600">{idx + 1}</div>
-                      <div className="text-sm">{a.desc}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h2 className="text-xl font-bold mb-4">{title}</h2>
+          <div className="flex gap-2 mb-3">
+            <label>Size:</label>
+            <input type="number" min={2} max={8} value={n}
+              onChange={e => setN(Number(e.target.value))}
+              className="w-16 border rounded px-1" />
+            <button className="px-2 border rounded" onClick={() => setInitialMatrix(generateSequentialMatrix(n))}>
+              Reset Seq
+            </button>
           </div>
+          <div className="flex gap-2 mb-3">
+            <button className="px-3 py-1 border rounded" onClick={stepBack} disabled={index < 0}>◀ Step</button>
+            <button className="px-3 py-1 border rounded" onClick={() => setPlaying(p => !p)}>{playing ? "⏸ Pause" : "▶ Play"}</button>
+            <button className="px-3 py-1 border rounded" onClick={stepForward} disabled={index >= actions.length - 1}>Step ▶</button>
+            <button className="px-3 py-1 border rounded" onClick={handleReset}>Reset</button>
+          </div>
+
+          <div className="grid"
+            style={{ gridTemplateColumns: `repeat(${n}, 48px)`, gap: "6px" }}>
+            {matrix.map((row, i) =>
+              row.map((val, j) => (
+                <div key={`${i}-${j}`} className="h-12 w-12 flex items-center justify-center border rounded font-semibold">
+                  {val}
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="mt-3 text-sm">
+            Step: {Math.max(0, index + 1)} / {actions.length}
+            <div>{index >= 0 ? actions[index].desc : "(not started)"}</div>
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      return (
+        <div className="p-6 space-y-6">
+          <Visualizer title="Algo 1: Reverse Rows + Transpose" algoType="reverseTranspose" />
+          <Visualizer title="Algo 2: Pointer (Top/Bottom/Left/Right)" algoType="pointer" />
         </div>
       );
     }
