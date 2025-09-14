@@ -1,250 +1,513 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8" />
-  <title>Matrix Rotator Visualizer</title>
-  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
-  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+  <title>Matrix Rotation Visualizer</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .cell {
+      width: 50px;
+      height: 50px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: bold;
+      border: 2px solid #d1d5db;
+      border-radius: 6px;
+      background: #f9fafb;
+      transition: all 0.4s ease;
+      cursor: pointer;
+    }
+    
+    .cell:hover { transform: scale(1.05); }
+    .cell.highlight { animation: pulse 0.8s ease-in-out infinite alternate; border-width: 3px; }
+    .cell.top-left { background: #f87171; border-color: #dc2626; color: white; }
+    .cell.top-right { background: #60a5fa; border-color: #2563eb; color: white; }
+    .cell.bottom-left { background: #4ade80; border-color: #16a34a; color: white; }
+    .cell.bottom-right { background: #facc15; border-color: #ca8a04; color: black; }
+    .cell.moving { background: #8b5cf6; border-color: #7c3aed; color: white; transform: scale(1.1); z-index: 10; }
+    
+    @keyframes pulse {
+      from { transform: scale(1); box-shadow: 0 0 15px rgba(59, 130, 246, 0.4); }
+      to { transform: scale(1.08); box-shadow: 0 0 25px rgba(59, 130, 246, 0.7); }
+    }
+    
+    .matrix-container {
+      display: inline-block;
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    }
+    
+    .code-line {
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    
+    .code-line.active { background: #fbbf24; color: black; font-weight: bold; }
+    .code-line.inactive { color: #10b981; }
+    
+    .btn { 
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-weight: 500;
+      transition: all 0.2s ease;
+      transform: scale(1);
+      border: none;
+      cursor: pointer;
+    }
+    
+    .btn:hover:not(:disabled) { transform: scale(1.05); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: scale(1); }
+    
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-primary:hover:not(:disabled) { background: #2563eb; }
+    
+    .btn-secondary { background: #6b7280; color: white; }
+    .btn-secondary:hover:not(:disabled) { background: #4b5563; }
+    
+    .btn-success { background: #10b981; color: white; }
+    .btn-success:hover:not(:disabled) { background: #059669; }
+    
+    .select { 
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: white;
+      outline: none;
+    }
+    
+    .select:focus { 
+      ring: 2px solid #3b82f6; 
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    }
+  </style>
 </head>
-
 <body>
-  <div id="root"></div>
+  <div class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+    <div class="max-w-7xl mx-auto space-y-6">
+      <!-- Header -->
+      <div class="text-center">
+        <h1 class="text-3xl font-bold text-gray-800 mb-2">Matrix Rotation Visualizer</h1>
+        <p class="text-gray-600">Interactive visualization of matrix rotation algorithms</p>
+      </div>
 
-  <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
-
-    // Helpers
-    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-    const deepCopy = (mat) => mat.map(r => r.slice());
-
-    function generateSequentialMatrix(n) {
-      const arr = [];
-      let c = 1;
-      for (let i = 0; i < n; i++) {
-        const row = [];
-        for (let j = 0; j < n; j++) row.push(c++);
-        arr.push(row);
-      }
-      return arr;
-    }
-
-    // --- First algorithm actions: reverse + transpose ---
-    function generateActionsReverseTranspose(n) {
-      const acts = [];
-      for (let i = 0; i < Math.floor(n / 2); i++) {
-        acts.push({ type: "swapRows", i1: i, i2: n - 1 - i, desc: `Reverse: swap row ${i} with row ${n - 1 - i}` });
-      }
-      for (let i = 0; i < n; i++) {
-        for (let j = i + 1; j < n; j++) {
-          acts.push({ type: "swapCells", a: [i, j], b: [j, i], desc: `Transpose: swap cell (${i},${j}) with (${j},${i})` });
-        }
-      }
-      return acts;
-    }
-
-    function applyActionReverseTranspose(mat, action) {
-      const m = deepCopy(mat);
-      if (!action) return m;
-      if (action.type === "swapRows") {
-        const tmp = m[action.i1];
-        m[action.i1] = m[action.i2];
-        m[action.i2] = tmp;
-      } else if (action.type === "swapCells") {
-        const [i1, j1] = action.a;
-        const [i2, j2] = action.b;
-        const t = m[i1][j1];
-        m[i1][j1] = m[i2][j2];
-        m[i2][j2] = t;
-      }
-      return m;
-    }
-
-    // --- Second algorithm actions: pointer-based ---
-    function generateActionsPointer(n) {
-      const acts = [];
-      let l = 0, r = n - 1;
-      while (l < r) {
-        for (let i = 0; i < r - l; i++) {
-          const top = l, bottom = r;
-
-          // Save topLeft
-          acts.push({
-            type: "save",
-            cell: [top, l + i],
-            desc: `Save top-left (${top},${l + i})`
-          });
-
-          // bottom-left -> top-left
-          acts.push({
-            type: "move",
-            from: [bottom - i, l],
-            to: [top, l + i],
-            desc: `Move bottom-left (${bottom - i},${l}) → top-left (${top},${l + i})`
-          });
-
-          // bottom-right -> bottom-left
-          acts.push({
-            type: "move",
-            from: [bottom, r - i],
-            to: [bottom - i, l],
-            desc: `Move bottom-right (${bottom},${r - i}) → bottom-left (${bottom - i},${l})`
-          });
-
-          // top-right -> bottom-right
-          acts.push({
-            type: "move",
-            from: [top + i, r],
-            to: [bottom, r - i],
-            desc: `Move top-right (${top + i},${r}) → bottom-right (${bottom},${r - i})`
-          });
-
-          // saved top-left -> top-right
-          acts.push({
-            type: "restore",
-            to: [top + i, r],
-            fromSaved: [top, l + i],
-            desc: `Move saved top-left → top-right (${top + i},${r})`
-          });
-        }
-        r--;
-        l++;
-      }
-      return acts;
-    }
-
-    function applyActionPointer(mat, action, saved) {
-      const m = deepCopy(mat);
-      let newSaved = saved;
-      if (!action) return { matrix: m, saved: newSaved };
-      if (action.type === "save") {
-        newSaved = m[action.cell[0]][action.cell[1]];
-      } else if (action.type === "move") {
-        const val = m[action.from[0]][action.from[1]];
-        m[action.to[0]][action.to[1]] = val;
-      } else if (action.type === "restore") {
-        m[action.to[0]][action.to[1]] = newSaved;
-        newSaved = null;
-      }
-      return { matrix: m, saved: newSaved };
-    }
-
-    // --- Generic Visualizer Component ---
-    function Visualizer({ title, algoType }) {
-      const [n, setN] = useState(3);
-      const [initialMatrix, setInitialMatrix] = useState(() => generateSequentialMatrix(3));
-      const [matrix, setMatrix] = useState(() => deepCopy(initialMatrix));
-      const [actions, setActions] = useState(() =>
-        algoType === "reverseTranspose" ? generateActionsReverseTranspose(3) : generateActionsPointer(3)
-      );
-      const [index, setIndex] = useState(-1);
-      const [playing, setPlaying] = useState(false);
-      const [speed, setSpeed] = useState(600);
-      const [saved, setSaved] = useState(null);
-      const timerRef = useRef(null);
-
-      // Update actions when size changes
-      useEffect(() => {
-        setActions(algoType === "reverseTranspose" ? generateActionsReverseTranspose(n) : generateActionsPointer(n));
-        setInitialMatrix(generateSequentialMatrix(n));
-      }, [n]);
-
-      useEffect(() => {
-        setMatrix(deepCopy(initialMatrix));
-        setIndex(-1);
-        setSaved(null);
-        setPlaying(false);
-      }, [initialMatrix]);
-
-      useEffect(() => {
-        if (!playing) {
-          clearTimeout(timerRef.current);
-          return;
-        }
-        if (index >= actions.length - 1) {
-          setPlaying(false);
-          return;
-        }
-        timerRef.current = setTimeout(() => {
-          stepForward();
-        }, clamp(speed, 50, 5000));
-        return () => clearTimeout(timerRef.current);
-      }, [playing, index, actions, speed]);
-
-      function stepForward() {
-        if (index + 1 >= actions.length) return;
-        const next = actions[index + 1];
-        if (algoType === "reverseTranspose") {
-          setMatrix(prev => applyActionReverseTranspose(prev, next));
-        } else {
-          const result = applyActionPointer(matrix, next, saved);
-          setMatrix(result.matrix);
-          setSaved(result.saved);
-        }
-        setIndex(i => i + 1);
-      }
-
-      function stepBack() {
-        alert("Step back not implemented for this algorithm.");
-      }
-
-      function handleReset() {
-        setPlaying(false);
-        setMatrix(deepCopy(initialMatrix));
-        setIndex(-1);
-        setSaved(null);
-      }
-
-      return (
-        <div className="bg-white p-4 rounded-lg shadow">
-          <h2 className="text-xl font-bold mb-4">{title}</h2>
-          <div className="flex gap-2 mb-3">
-            <label>Size:</label>
-            <input type="number" min={2} max={8} value={n}
-              onChange={e => setN(Number(e.target.value))}
-              className="w-16 border rounded px-1" />
-            <button className="px-2 border rounded" onClick={() => setInitialMatrix(generateSequentialMatrix(n))}>
-              Reset Seq
-            </button>
+      <!-- Controls -->
+      <div class="bg-white p-4 rounded-xl shadow-lg">
+        <div class="flex flex-wrap justify-center items-center gap-4">
+          <div class="flex items-center gap-2">
+            <label class="text-sm font-medium text-gray-700">Algorithm:</label>
+            <select id="algorithmType" class="select">
+              <option value="inplace">In-Place Rotation (Step-by-Step)</option>
+            </select>
           </div>
-          <div className="flex gap-2 mb-3">
-            <button className="px-3 py-1 border rounded" onClick={stepBack} disabled={index < 0}>◀ Step</button>
-            <button className="px-3 py-1 border rounded" onClick={() => setPlaying(p => !p)}>{playing ? "⏸ Pause" : "▶ Play"}</button>
-            <button className="px-3 py-1 border rounded" onClick={stepForward} disabled={index >= actions.length - 1}>Step ▶</button>
-            <button className="px-3 py-1 border rounded" onClick={handleReset}>Reset</button>
+          
+          <div class="flex items-center gap-2">
+            <label class="text-sm font-medium text-gray-700">Size:</label>
+            <select id="matrixSize" class="select">
+              <option value="3">3×3</option>
+              <option value="4" selected>4×4</option>
+              <option value="5">5×5</option>
+            </select>
           </div>
+          
+          <button id="startBtn" class="btn btn-success">Start</button>
+          <button id="resetBtn" class="btn btn-primary">Reset</button>
+          <button id="prevBtn" class="btn btn-secondary">← Prev</button>
+          <button id="nextBtn" class="btn btn-secondary">Next →</button>
+        </div>
+      </div>
 
-          <div className="grid"
-            style={{ gridTemplateColumns: `repeat(${n}, 48px)`, gap: "6px" }}>
-            {matrix.map((row, i) =>
-              row.map((val, j) => (
-                <div key={`${i}-${j}`} className="h-12 w-12 flex items-center justify-center border rounded font-semibold">
-                  {val}
+      <div class="grid lg:grid-cols-4 gap-6">
+        <!-- Matrix Display -->
+        <div class="lg:col-span-2">
+          <div class="text-center space-y-4">
+            <h2 class="text-xl font-bold text-gray-800">Matrix Visualization</h2>
+            <div class="matrix-container">
+              <div id="matrixGrid" class="grid gap-1"></div>
+            </div>
+            
+            <!-- Legend -->
+            <div class="bg-white p-3 rounded-lg shadow-lg inline-block">
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                <div class="flex items-center gap-1">
+                  <div class="w-3 h-3 bg-red-400 rounded"></div>
+                  <span>Top Left</span>
                 </div>
-              ))
-            )}
-          </div>
-
-          <div className="mt-3 text-sm">
-            Step: {Math.max(0, index + 1)} / {actions.length}
-            <div>{index >= 0 ? actions[index].desc : "(not started)"}</div>
+                <div class="flex items-center gap-1">
+                  <div class="w-3 h-3 bg-blue-400 rounded"></div>
+                  <span>Top Right</span>
+                </div>
+                <div class="flex items-center gap-1">
+                  <div class="w-3 h-3 bg-green-400 rounded"></div>
+                  <span>Bottom Left</span>
+                </div>
+                <div class="flex items-center gap-1">
+                  <div class="w-3 h-3 bg-yellow-400 rounded"></div>
+                  <span>Bottom Right</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      );
-    }
 
-    function App() {
-      return (
-        <div className="p-6 space-y-6">
-          <Visualizer title="Algo 1: Reverse Rows + Transpose" algoType="reverseTranspose" />
-          <Visualizer title="Algo 2: Pointer (Top/Bottom/Left/Right)" algoType="pointer" />
+        <!-- Info Panel -->
+        <div class="space-y-4">
+          <div class="bg-white p-4 rounded-xl shadow-lg">
+            <h3 class="text-lg font-bold text-gray-800 mb-3">Progress</h3>
+            <div class="space-y-2 text-sm text-gray-700">
+              <div class="flex justify-between">
+                <span>Step:</span>
+                <span><span id="currentStep">1</span> / <span id="totalSteps">1</span></span>
+              </div>
+              <div class="flex justify-between" id="layerInfo" style="display: none;">
+                <span>Layer:</span>
+                <span id="currentLayer">-</span>
+              </div>
+              <div class="flex justify-between" id="iterationInfo" style="display: none;">
+                <span>Iteration:</span>
+                <span id="currentIteration">-</span>
+              </div>
+              <div id="stepDescription" class="text-xs mt-2 p-2 bg-blue-50 rounded border-l-2 border-blue-400">
+                Ready to start
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-white p-4 rounded-xl shadow-lg">
+            <h3 class="text-lg font-bold text-gray-800 mb-3">How It Works</h3>
+            <div id="algorithmExplanation" class="text-xs text-gray-700 space-y-1">
+              <p><strong>In-Place:</strong> Rotates matrix using O(1) space</p>
+              <p><strong>Layer-wise:</strong> Process rings from outside to inside</p>
+              <p><strong>4-Cycle:</strong> Each step rotates 4 elements</p>
+            </div>
+          </div>
         </div>
-      );
-    }
 
-    ReactDOM.render(<App />, document.getElementById("root"));
+        <!-- Code Display -->
+        <div class="bg-gray-900 text-green-400 p-4 rounded-xl shadow-lg font-mono text-xs overflow-hidden">
+          <h3 class="text-lg font-bold text-white mb-3">Algorithm</h3>
+          <div id="codeDisplay" class="overflow-y-auto max-h-96"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    class MatrixVisualizer {
+      constructor() {
+        this.matrix = [];
+        this.originalMatrix = [];
+        this.steps = [];
+        this.currentStep = 0;
+        this.isAnimating = false;
+        this.size = 4;
+        this.algorithm = 'inplace';
+        
+        this.algorithms = {
+          inplace: {
+            name: 'In-Place Rotation',
+            explanation: [
+              '<strong>In-Place:</strong> Rotates matrix using O(1) space',
+              '<strong>Layer-wise:</strong> Process rings from outside to inside',
+              '<strong>4-Cycle:</strong> Each step rotates 4 elements'
+            ],
+            code: [
+              'let l = 0, r = matrix.length - 1;',
+              'while (l < r) {',
+              '    for (let i = 0; i < r - l; i++) {',
+              '        const top = l, bottom = r;',
+              '        const topLeft = matrix[top][l + i];',
+              '        matrix[top][l + i] = matrix[bottom - i][l];',
+              '        matrix[bottom - i][l] = matrix[bottom][r - i];',
+              '        matrix[bottom][r - i] = matrix[top + i][r];',
+              '        matrix[top + i][r] = topLeft;',
+              '    }',
+              '    r--; l++;',
+              '}'
+            ]
+          },
+          solution: {
+            name: 'Solution Only',
+            explanation: [
+              '<strong>Direct:</strong> Shows only the rotation result',
+              '<strong>90° Clockwise:</strong> Each element moves to its final position',
+              '<strong>Pattern:</strong> (i,j) → (j, n-1-i)'
+            ],
+            code: [
+              '// Direct rotation without steps',
+              'function rotate90(matrix) {',
+              '    const n = matrix.length;',
+              '    const result = Array(n).fill().map(() => Array(n));',
+              '    for (let i = 0; i < n; i++) {',
+              '        for (let j = 0; j < n; j++) {',
+              '            result[j][n - 1 - i] = matrix[i][j];',
+              '        }',
+              '    }',
+              '    return result;',
+              '}'
+            ]
+          },
+          transpose: {
+            name: 'Reverse + Transpose',
+            explanation: [
+              '<strong>Two Steps:</strong> 1) Reverse rows, 2) Transpose',
+              '<strong>Reverse:</strong> Flip each row horizontally',
+              '<strong>Transpose:</strong> Swap elements across diagonal'
+            ],
+            code: [
+              '// Step 1: Reverse each row',
+              'matrix.forEach(row => row.reverse());',
+              '',
+              '// Step 2: Transpose matrix',
+              'for (let i = 0; i < n; i++) {',
+              '    for (let j = i; j < n; j++) {',
+              '        [matrix[i][j], matrix[j][i]] = ',
+              '        [matrix[j][i], matrix[i][j]];',
+              '    }',
+              '}'
+            ]
+          }
+        };
+        
+        this.init();
+      }
+      
+      init() {
+        this.bindEvents();
+        this.generateMatrix();
+        this.render();
+      }
+      
+      bindEvents() {
+        const events = [
+          ['algorithmType', 'change', (e) => this.changeAlgorithm(e.target.value)],
+          ['matrixSize', 'change', (e) => this.changeSize(parseInt(e.target.value))],
+          ['startBtn', 'click', () => this.start()],
+          ['resetBtn', 'click', () => this.reset()],
+          ['prevBtn', 'click', () => this.step(-1)],
+          ['nextBtn', 'click', () => this.step(1)]
+        ];
+        
+        events.forEach(([id, event, handler]) => {
+          document.getElementById(id).addEventListener(event, handler);
+        });
+      }
+      
+      generateMatrix() {
+        this.matrix = Array(this.size).fill().map((_, i) => 
+          Array(this.size).fill().map((_, j) => i * this.size + j + 1)
+        );
+        this.originalMatrix = this.matrix.map(row => [...row]);
+        this.generateSteps();
+        this.currentStep = 0;
+      }
+      
+      generateSteps() {
+        this.steps = [];
+        const m = this.matrix.map(row => [...row]);
+        
+        switch(this.algorithm) {
+          case 'inplace':
+            this.generateInPlaceSteps(m);
+            break;
+          case 'solution':
+            this.generateSolutionSteps(m);
+            break;
+          case 'transpose':
+            this.generateTransposeSteps(m);
+            break;
+        }
+      }
+      
+      generateInPlaceSteps(m) {
+        this.steps.push({ matrix: m.map(r => [...r]), highlights: [], desc: 'Starting in-place rotation', layer: -1, iteration: -1, line: 0 });
+        
+        let l = 0, r = m.length - 1;
+        while (l < r) {
+          for (let i = 0; i < r - l; i++) {
+            const positions = [[l, l + i, 'top-left'], [l + i, r, 'top-right'], [r, r - i, 'bottom-right'], [r - i, l, 'bottom-left']];
+            
+            this.steps.push({ matrix: m.map(r => [...r]), highlights: positions, desc: `Layer ${l + 1}, Iteration ${i + 1}: Highlighting 4-cycle`, layer: l, iteration: i, line: 4 });
+            
+            const temp = m[l][l + i];
+            m[l][l + i] = m[r - i][l];
+            m[r - i][l] = m[r][r - i];
+            m[r][r - i] = m[l + i][r];
+            m[l + i][r] = temp;
+            
+            this.steps.push({ matrix: m.map(r => [...r]), highlights: positions, desc: `Completed 4-cycle rotation`, layer: l, iteration: i, line: 8 });
+          }
+          r--; l++;
+        }
+        
+        this.steps.push({ matrix: m.map(r => [...r]), highlights: [], desc: 'Rotation complete!', layer: -1, iteration: -1, line: -1 });
+      }
+      
+      generateSolutionSteps(m) {
+        this.steps.push({ matrix: m.map(r => [...r]), highlights: [], desc: 'Original matrix', line: 0 });
+        
+        const rotated = Array(this.size).fill().map(() => Array(this.size));
+        for (let i = 0; i < this.size; i++) {
+          for (let j = 0; j < this.size; j++) {
+            rotated[j][this.size - 1 - i] = m[i][j];
+          }
+        }
+        
+        this.steps.push({ matrix: rotated, highlights: [], desc: 'Matrix rotated 90° clockwise', line: 6 });
+      }
+      
+      generateTransposeSteps(m) {
+        this.steps.push({ matrix: m.map(r => [...r]), highlights: [], desc: 'Original matrix', line: 0 });
+        
+        // Step 1: Reverse rows
+        m.forEach(row => row.reverse());
+        this.steps.push({ matrix: m.map(r => [...r]), highlights: [], desc: 'Step 1: Reversed all rows', line: 1 });
+        
+        // Step 2: Transpose
+        for (let i = 0; i < this.size; i++) {
+          for (let j = i + 1; j < this.size; j++) {
+            [m[i][j], m[j][i]] = [m[j][i], m[i][j]];
+          }
+        }
+        this.steps.push({ matrix: m.map(r => [...r]), highlights: [], desc: 'Step 2: Transposed matrix - Rotation complete!', line: 7 });
+      }
+      
+      render() {
+        this.renderMatrix();
+        this.renderCode();
+        this.renderExplanation();
+        this.updateUI();
+      }
+      
+      renderMatrix() {
+        const grid = document.getElementById('matrixGrid');
+        grid.style.gridTemplateColumns = `repeat(${this.size}, 1fr)`;
+        grid.innerHTML = '';
+        
+        this.matrix.forEach((row, i) => {
+          row.forEach((val, j) => {
+            const cell = document.createElement('div');
+            cell.className = 'cell';
+            cell.textContent = val;
+            cell.dataset.pos = `${i}-${j}`;
+            grid.appendChild(cell);
+          });
+        });
+      }
+      
+      renderCode() {
+        const display = document.getElementById('codeDisplay');
+        const { code } = this.algorithms[this.algorithm];
+        display.innerHTML = code.map((line, i) => 
+          `<div class="code-line inactive"><span style="color: #6b7280; margin-right: 8px;">${String(i + 1).padStart(2, '0')}</span>${line}</div>`
+        ).join('');
+      }
+      
+      renderExplanation() {
+        document.getElementById('algorithmExplanation').innerHTML = 
+          this.algorithms[this.algorithm].explanation.map(text => `<p>${text}</p>`).join('');
+      }
+      
+      updateUI() {
+        const step = this.steps[this.currentStep] || {};
+        
+        if (step.matrix) {
+          this.matrix = step.matrix.map(r => [...r]);
+          this.renderMatrix();
+          
+          // Apply highlights
+          document.querySelectorAll('.cell').forEach(cell => {
+            cell.className = 'cell';
+            const [i, j] = cell.dataset.pos.split('-').map(Number);
+            const highlight = (step.highlights || []).find(([r, c]) => r === i && c === j);
+            if (highlight) cell.classList.add('highlight', highlight[2]);
+          });
+        }
+        
+        // Update info
+        document.getElementById('currentStep').textContent = this.currentStep + 1;
+        document.getElementById('totalSteps').textContent = this.steps.length;
+        document.getElementById('stepDescription').textContent = step.desc || 'Ready';
+        
+        const showLayerInfo = this.algorithm === 'inplace' && step.layer >= 0;
+        document.getElementById('layerInfo').style.display = showLayerInfo ? 'flex' : 'none';
+        document.getElementById('iterationInfo').style.display = showLayerInfo ? 'flex' : 'none';
+        
+        if (showLayerInfo) {
+          document.getElementById('currentLayer').textContent = step.layer + 1;
+          document.getElementById('currentIteration').textContent = step.iteration + 1;
+        }
+        
+        // Update code highlighting
+        if (step.line >= 0) {
+          document.querySelectorAll('.code-line').forEach((line, i) => {
+            line.className = `code-line ${i === step.line ? 'active' : 'inactive'}`;
+          });
+        }
+        
+        // Update buttons
+        const isFirst = this.currentStep <= 0;
+        const isLast = this.currentStep >= this.steps.length - 1;
+        document.getElementById('prevBtn').disabled = isFirst || this.isAnimating;
+        document.getElementById('nextBtn').disabled = isLast || this.isAnimating;
+        document.getElementById('startBtn').disabled = this.isAnimating;
+        document.getElementById('startBtn').textContent = this.isAnimating ? 'Running...' : 'Start';
+      }
+      
+      changeAlgorithm(algo) {
+        if (this.isAnimating) return;
+        this.algorithm = algo;
+        this.generateSteps();
+        this.currentStep = 0;
+        this.render();
+      }
+      
+      changeSize(size) {
+        if (this.isAnimating) return;
+        this.size = size;
+        this.generateMatrix();
+        this.render();
+      }
+      
+      async start() {
+        if (this.isAnimating) return;
+        this.isAnimating = true;
+        
+        for (let i = 0; i < this.steps.length; i++) {
+          this.currentStep = i;
+          this.updateUI();
+          await new Promise(resolve => setTimeout(resolve, this.algorithm === 'transpose' ? 1200 : 1400));
+        }
+        
+        this.isAnimating = false;
+        this.updateUI();
+      }
+      
+      step(direction) {
+        if (this.isAnimating) return;
+        const newStep = this.currentStep + direction;
+        if (newStep >= 0 && newStep < this.steps.length) {
+          this.currentStep = newStep;
+          this.updateUI();
+        }
+      }
+      
+      reset() {
+        if (this.isAnimating) return;
+        this.generateMatrix();
+        this.render();
+      }
+    }
+    
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => new MatrixVisualizer());
   </script>
 </body>
 </html>
